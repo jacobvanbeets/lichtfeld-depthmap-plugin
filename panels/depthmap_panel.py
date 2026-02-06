@@ -473,6 +473,14 @@ class DepthmapPanel(Panel):
                 if layout.button("+.1##minadd01", (btn_w_small, 0)):
                     self._min_depth += 0.1
                     settings_changed = True
+                layout.same_line()
+                if layout.button("-.01##minsub001", (btn_w_small, 0)):
+                    self._min_depth -= 0.01
+                    settings_changed = True
+                layout.same_line()
+                if layout.button("+.01##minadd001", (btn_w_small, 0)):
+                    self._min_depth += 0.01
+                    settings_changed = True
                 
                 # Max row
                 layout.push_item_width(80 * scale)
@@ -495,6 +503,14 @@ class DepthmapPanel(Panel):
                 layout.same_line()
                 if layout.button("+.1##maxadd01", (btn_w_small, 0)):
                     self._max_depth += 0.1
+                    settings_changed = True
+                layout.same_line()
+                if layout.button("-.01##maxsub001", (btn_w_small, 0)):
+                    self._max_depth -= 0.01
+                    settings_changed = True
+                layout.same_line()
+                if layout.button("+.01##maxadd001", (btn_w_small, 0)):
+                    self._max_depth += 0.01
                     settings_changed = True
                 
                 # Swap if needed
