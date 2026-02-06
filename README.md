@@ -1,6 +1,7 @@
 # Depth Map Visualization Plugin for LichtFeld Studio
 
 A plugin that creates a colored depth map for Gaussian Splats and point clouds, with live preview, adjustable depth ranges from selected points, and an optional oriented region box.
+<img width="1919" height="1078" alt="image" src="https://github.com/user-attachments/assets/8bbc8afd-d9ca-4f98-a05e-c8befa96c8ab" />
 
 ## Installation (LichtFeld Studio v0.5+)
 
