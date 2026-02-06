@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+.venv/
+venv/
+ENV/
+
+# LichtFeld plugin env
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
