@@ -379,7 +379,7 @@ class DepthmapPanel(Panel):
         if layout.collapsing_header("Depth Range", default_open=True):
             
             # Instructions
-            layout.text_colored("1. Press S for selection tool", theme.palette.text_dim)
+            layout.text_colored("1. Switch to Select mode (toolbar)", theme.palette.text_dim)
             layout.text_colored("2. Click on model to select points", theme.palette.text_dim)
             layout.text_colored("3. Click Set Point button below", theme.palette.text_dim)
             layout.spacing()

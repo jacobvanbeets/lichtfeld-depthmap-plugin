@@ -18,7 +18,7 @@ git clone https://github.com/jacobvanbeets/lichtfeld-depthmap-plugin ~/.lichtfel
 ## Usage
 - Open the "Depth Map" panel in the side panel.
 - Pick colormap (Jet, Grayscale, Turbo, Viridis) and axis (Z/Y/X/Camera).
-- Optionally set the depth range from two selected points (S + click).
+- Optionally set the depth range by selecting points (switch to Select mode in the toolbar, then click on the model).
 - Apply/Update/Restore from the panel.
 
 ## Project
