@@ -9,7 +9,6 @@ from dataclasses import dataclass
 import lichtfeld as lf
 
 from .colormaps import get_colormap, jet_colormap, grayscale_colormap
-from .obb import OrientedBoundingBox
 
 
 @dataclass
@@ -125,11 +124,7 @@ def apply_depthmap_colors(
     min_depth: Optional[float] = None,
     max_depth: Optional[float] = None,
     range_only: bool = False,
-    bbox: Optional[BoundingBox] = None,
-    obb: Optional[OrientedBoundingBox] = None,
     invert: bool = False,
-    apply_to_region_only: bool = True,
-    outside_color: Tuple[float, float, float] = (0.5, 0.5, 0.5),
     original_sh0: Optional[np.ndarray] = None,
 ) -> Tuple[bool, str]:
     """Apply depth-based colors to a splat node.
@@ -141,10 +136,7 @@ def apply_depthmap_colors(
         min_depth: Manual minimum depth (auto if None)
         max_depth: Manual maximum depth (auto if None)
         range_only: If True, only colorize points within min/max range
-        bbox: Optional bounding box to limit the region
         invert: Invert the depth (far=low value, near=high value)
-        apply_to_region_only: If True with bbox, only colorize points inside bbox
-        outside_color: Color for points outside bbox/range (if apply_to_region_only)
         original_sh0: Saved original SH0 colors to use as base when range_only is enabled
         
     Returns:
@@ -179,7 +171,7 @@ def apply_depthmap_colors(
         
         # Compute depths
         normalized, mask, d_min, d_max = compute_depth_values(
-            positions, axis, camera_pos, min_depth, max_depth, bbox
+            positions, axis, camera_pos, min_depth, max_depth
         )
         
         if invert:
@@ -191,11 +183,6 @@ def apply_depthmap_colors(
             colors = grayscale_colormap(normalized, invert=False)  # already inverted above
         else:
             colors = cmap_fn(normalized)
-        
-        # Handle region-only coloring
-        if bbox is not None and bbox.is_valid() and apply_to_region_only:
-            outside_mask = ~mask
-            colors[outside_mask] = outside_color
         
         # Update point cloud colors
         colors_tensor = lf.Tensor.from_numpy(colors.astype(np.float32))
@@ -215,21 +202,10 @@ def apply_depthmap_colors(
         if view is not None:
             camera_pos = np.array(view.translation.numpy()).flatten()
     
-    # Compute depths - use OBB if provided, otherwise AABB
-    effective_bbox = bbox
-    if obb is not None:
-        # For OBB, we compute depth in local space and create mask separately
-        obb_mask = obb.contains(positions)
-    else:
-        obb_mask = None
-    
+    # Compute depths
     normalized, mask, d_min, d_max = compute_depth_values(
-        positions, axis, camera_pos, min_depth, max_depth, effective_bbox
+        positions, axis, camera_pos, min_depth, max_depth
     )
-    
-    # Combine masks if OBB is used
-    if obb_mask is not None:
-        mask = obb_mask
     
     if invert:
         normalized = 1.0 - normalized
@@ -240,11 +216,6 @@ def apply_depthmap_colors(
         colors = grayscale_colormap(normalized, invert=False)
     else:
         colors = cmap_fn(normalized)
-    
-    # Handle region-only coloring for bbox
-    if bbox is not None and bbox.is_valid() and apply_to_region_only:
-        outside_mask = ~mask
-        colors[outside_mask] = outside_color
     
     # Convert colors to SH0 format
     C0 = 0.28209479177387814

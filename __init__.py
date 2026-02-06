@@ -2,8 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Depth Map Visualization Plugin for LichtFeld Studio.
 
-Provides Jet colormap and Grayscale depth visualization for Gaussian Splats
-with support for region-of-interest selection using bounding boxes.
+Provides Jet colormap and Grayscale depth visualization for Gaussian Splats.
 """
 
 import lichtfeld as lf

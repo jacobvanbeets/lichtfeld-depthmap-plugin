@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: 2025 LichtFeld Studio Authors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Depth Map Visualization Panel with live preview and OBB region selection."""
+"""Depth Map Visualization Panel with live preview."""
 
 from typing import Optional
 import numpy as np
@@ -8,8 +8,7 @@ import lichtfeld as lf
 import lichtfeld.selection as sel
 from lfs_plugins.types import Panel
 
-from ..core.depthmap import apply_depthmap_colors, get_scene_bounds
-from ..core.obb import OrientedBoundingBox
+from ..core.depthmap import apply_depthmap_colors
 
 
 class DepthmapPanel(Panel):
@@ -33,14 +32,11 @@ class DepthmapPanel(Panel):
         ("camera", "Camera Distance"),
     ]
     
-    BOX_NODE_NAME = "__depthmap_region_box__"
-    
     def __init__(self):
         # Enable toggle for non-destructive preview
         self._enabled = False
         self._live_preview = True  # Always on by default
         self._depth_map_active = False
-        self._show_box = True
         
         # Colormap settings
         self._colormap_idx = 0
@@ -60,20 +56,10 @@ class DepthmapPanel(Panel):
         self._captured_depth = None
         self._draw_handler_id = "depthmap_markers"
         
-        # OBB region
-        self._use_obb = False
-        self._obb = OrientedBoundingBox()
-        self._apply_to_region_only = True
-        self._outside_color = (0.5, 0.5, 0.5)
-        
         # Saved colors
         self._saved_colors: dict = {}  # SH0
         self._saved_shN: dict = {}  # Higher-order SH (for grayscale restore)
         self._current_target: Optional[str] = None
-        
-        # Box visualization
-        self._box_visible = False
-        self._last_obb_hash = None
         
         # Status
         self._status_msg = ""
@@ -320,8 +306,6 @@ class DepthmapPanel(Panel):
         max_depth = self._max_depth if self._use_custom_range else None
         range_only = self._range_only if self._use_custom_range else False
         
-        obb = self._obb if self._use_obb else None
-        
         # Get saved original colors for range_only mode
         original_sh0 = None
         if range_only and node_name in self._saved_colors:
@@ -334,10 +318,7 @@ class DepthmapPanel(Panel):
             min_depth=min_depth,
             max_depth=max_depth,
             range_only=range_only,
-            obb=obb,
             invert=self._invert,
-            apply_to_region_only=self._apply_to_region_only,
-            outside_color=self._outside_color,
             original_sh0=original_sh0,
         )
         
@@ -345,104 +326,6 @@ class DepthmapPanel(Panel):
         if not silent:
             self._status_msg = msg
             self._status_is_error = not success
-    
-    def _fit_obb_to_scene(self):
-        """Fit OBB to scene bounds."""
-        node_name = self._get_selected_splat_name()
-        bounds = get_scene_bounds(node_name)
-        if bounds:
-            self._obb.center_x = (bounds.min_x + bounds.max_x) / 2
-            self._obb.center_y = (bounds.min_y + bounds.max_y) / 2
-            self._obb.center_z = (bounds.min_z + bounds.max_z) / 2
-            self._obb.size_x = (bounds.max_x - bounds.min_x) / 2
-            self._obb.size_y = (bounds.max_y - bounds.min_y) / 2
-            self._obb.size_z = (bounds.max_z - bounds.min_z) / 2
-            self._obb.rotation_x = 0.0
-            self._obb.rotation_y = 0.0
-            self._obb.rotation_z = 0.0
-    
-    def _get_obb_hash(self) -> tuple:
-        """Get hash of OBB settings to detect changes."""
-        return (
-            self._obb.center_x, self._obb.center_y, self._obb.center_z,
-            self._obb.rotation_x, self._obb.rotation_y, self._obb.rotation_z,
-            self._obb.size_x, self._obb.size_y, self._obb.size_z,
-        )
-    
-    def _update_box_visualization(self):
-        """Update or create the box visualization using cropbox."""
-        if not self._use_obb or not self._show_box:
-            self._remove_box_visualization()
-            return
-        
-        # Check if OBB changed
-        current_hash = self._get_obb_hash()
-        if current_hash == self._last_obb_hash and self._box_visible:
-            return
-        
-        self._last_obb_hash = current_hash
-        
-        scene = lf.get_scene()
-        if not scene:
-            return
-        
-        # Get the splat node to attach cropbox to
-        node_name = self._get_selected_splat_name()
-        if not node_name:
-            return
-        
-        node = scene.get_node(node_name)
-        if not node:
-            return
-        
-        # Get or create cropbox for visualization
-        try:
-            cropbox_id = scene.get_or_create_cropbox_for_splat(node.id)
-            cropbox = scene.get_cropbox_data(cropbox_id)
-            if cropbox:
-                # Set cropbox bounds from OBB (note: cropbox doesn't support rotation)
-                cropbox.min = (
-                    self._obb.center_x - self._obb.size_x,
-                    self._obb.center_y - self._obb.size_y,
-                    self._obb.center_z - self._obb.size_z,
-                )
-                cropbox.max = (
-                    self._obb.center_x + self._obb.size_x,
-                    self._obb.center_y + self._obb.size_y,
-                    self._obb.center_z + self._obb.size_z,
-                )
-                cropbox.enabled = False  # Don't actually crop, just visualize
-                cropbox.color = (1.0, 0.5, 0.0)  # Orange
-                self._box_visible = True
-                scene.notify_changed()
-                lf.ui.request_redraw()
-        except Exception as e:
-            lf.log.warning(f"Could not create box visualization: {e}")
-            self._box_visible = False
-    
-    def _remove_box_visualization(self):
-        """Remove the box visualization from scene."""
-        if not self._box_visible:
-            return
-        
-        try:
-            scene = lf.get_scene()
-            if scene:
-                node_name = self._get_selected_splat_name()
-                if node_name:
-                    node = scene.get_node(node_name)
-                    if node:
-                        cropbox_id = scene.get_cropbox_for_splat(node.id)
-                        if cropbox_id >= 0:
-                            cropbox_node = scene.get_node_by_id(cropbox_id)
-                            if cropbox_node:
-                                scene.remove_node(cropbox_node.name, False)
-                                scene.notify_changed()
-                                lf.ui.request_redraw()
-        except Exception as e:
-            pass
-        
-        self._box_visible = False
     
     def draw(self, layout):
         theme = lf.ui.theme()
@@ -629,94 +512,6 @@ class DepthmapPanel(Panel):
                     layout.set_tooltip("Checked: Only color within range (keep original outside)\nUnchecked: Flood all splats with depth colors")
             else:
                 layout.text_colored("Range: Auto (from scene)", theme.palette.text_dim)
-        
-        # === Region Box (OBB) ===
-        if layout.collapsing_header("Region Box", default_open=True):
-            changed, self._use_obb = layout.checkbox("Enable Region Box", self._use_obb)
-            settings_changed |= changed
-            
-            if self._use_obb:
-                layout.indent()
-                
-                # Show box toggle
-                changed_show, self._show_box = layout.checkbox("Show Box##vis", self._show_box)
-                if changed_show:
-                    if self._show_box:
-                        self._last_obb_hash = None  # Force redraw
-                    else:
-                        self._remove_box_visualization()
-                
-                # Fit to scene
-                if layout.button("Fit to Scene##obb", (-1, 0)):
-                    self._fit_obb_to_scene()
-                    settings_changed = True
-                
-                layout.separator()
-                
-                # Position
-                layout.label("Position")
-                changed, self._obb.center_x = layout.drag_float("X##pos", self._obb.center_x, 0.1, -1000.0, 1000.0)
-                settings_changed |= changed
-                changed, self._obb.center_y = layout.drag_float("Y##pos", self._obb.center_y, 0.1, -1000.0, 1000.0)
-                settings_changed |= changed
-                changed, self._obb.center_z = layout.drag_float("Z##pos", self._obb.center_z, 0.1, -1000.0, 1000.0)
-                settings_changed |= changed
-                
-                layout.spacing()
-                
-                # Rotation (degrees)
-                layout.label("Rotation (degrees)")
-                changed, self._obb.rotation_x = layout.drag_float("X##rot", self._obb.rotation_x, 1.0, -360.0, 360.0)
-                settings_changed |= changed
-                changed, self._obb.rotation_y = layout.drag_float("Y##rot", self._obb.rotation_y, 1.0, -360.0, 360.0)
-                settings_changed |= changed
-                changed, self._obb.rotation_z = layout.drag_float("Z##rot", self._obb.rotation_z, 1.0, -360.0, 360.0)
-                settings_changed |= changed
-                
-                # Quick rotation buttons
-                avail_w, _ = layout.get_content_region_avail()
-                btn_w = avail_w / 4 - 2
-                if layout.button("0##qrot", (btn_w, 0)):
-                    self._obb.rotation_z = 0.0
-                    settings_changed = True
-                layout.same_line()
-                if layout.button("90##qrot", (btn_w, 0)):
-                    self._obb.rotation_z = 90.0
-                    settings_changed = True
-                layout.same_line()
-                if layout.button("180##qrot", (btn_w, 0)):
-                    self._obb.rotation_z = 180.0
-                    settings_changed = True
-                layout.same_line()
-                if layout.button("270##qrot", (btn_w, 0)):
-                    self._obb.rotation_z = 270.0
-                    settings_changed = True
-                
-                layout.spacing()
-                
-                # Size (half-extents)
-                layout.label("Size (half-extents)")
-                changed, self._obb.size_x = layout.drag_float("X##size", self._obb.size_x, 0.1, 0.01, 1000.0)
-                settings_changed |= changed
-                changed, self._obb.size_y = layout.drag_float("Y##size", self._obb.size_y, 0.1, 0.01, 1000.0)
-                settings_changed |= changed
-                changed, self._obb.size_z = layout.drag_float("Z##size", self._obb.size_z, 0.1, 0.01, 1000.0)
-                settings_changed |= changed
-                
-                layout.separator()
-                
-                changed, self._apply_to_region_only = layout.checkbox("Color Region Only##obb", self._apply_to_region_only)
-                settings_changed |= changed
-                if layout.is_item_hovered():
-                    layout.set_tooltip("Points outside region will be gray")
-                
-                layout.unindent()
-        
-        # === Update box visualization ===
-        if self._use_obb and self._show_box:
-            self._update_box_visualization()
-        elif not self._use_obb:
-            self._remove_box_visualization()
         
         # === Live preview update ===
         if self._enabled and self._live_preview and settings_changed:
