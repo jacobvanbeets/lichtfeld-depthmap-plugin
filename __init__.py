@@ -8,10 +8,11 @@ Provides Jet colormap and Grayscale depth visualization for Gaussian Splats.
 import lichtfeld as lf
 
 from .panels.depthmap_panel import DepthmapPanel
+from .operators.point_picker import DEPTHMAP_OT_pick_point
 from .core.colormaps import jet_colormap, grayscale_colormap
 from .core.depthmap import apply_depthmap_colors
 
-_classes = [DepthmapPanel]
+_classes = [DepthmapPanel, DEPTHMAP_OT_pick_point]
 
 
 def on_load():

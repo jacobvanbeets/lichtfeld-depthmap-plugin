@@ -9,6 +9,73 @@ import lichtfeld.selection as sel
 from lfs_plugins.types import Panel
 
 from ..core.depthmap import apply_depthmap_colors
+from ..operators.point_picker import set_pick_callback, clear_pick_callback, was_pick_cancelled
+
+
+# Module-level state that persists across panel redraws
+_draw_handler_registered = False
+_picking_state = {
+    'picking_point': 0,  # 0 = not picking, 1 = picking point 1, 2 = picking point 2
+    'status_msg': '',
+    'point1_pos': None,
+    'point2_pos': None,
+    'min_depth': 0.0,
+    'max_depth': 10.0,
+    'captured_pos': None,
+    'captured_depth': None,
+}
+
+# Module-level state for picked point (set by operator callback)
+_pending_pick = None  # Will be set to (world_pos, point_num) when a point is picked
+
+def _on_point_picked_callback(world_pos, point_num: int):
+    """Module-level callback for when a point is picked."""
+    global _pending_pick
+    _pending_pick = (world_pos, point_num)
+    lf.ui.request_redraw()  # Trigger panel redraw to process the pick
+
+def _depthmap_draw_handler(ctx):
+    """Module-level draw handler for picking overlay."""
+    global _picking_state
+    
+    picking_point = _picking_state['picking_point']
+    
+    # During picking mode, show overlay
+    if picking_point > 0:
+        color = (0.0, 1.0, 0.0, 0.9) if picking_point == 1 else (1.0, 0.5, 0.0, 0.9)
+        ctx.draw_text_2d(
+            (20, 50),
+            f"PICK POINT {picking_point}: Click on model (ESC to cancel)",
+            color
+        )
+    
+    # Draw Point 1 marker (green)
+    if _picking_state['point1_pos'] is not None:
+        ctx.draw_point_3d(_picking_state['point1_pos'], (0.0, 1.0, 0.0, 1.0), 20.0)
+        screen = ctx.world_to_screen(_picking_state['point1_pos'])
+        if screen:
+            ctx.draw_text_2d((screen[0] + 15, screen[1] - 8), f"P1 Min: {_picking_state['min_depth']:.1f}", (0.0, 1.0, 0.0, 1.0))
+            ctx.draw_circle_2d(screen, 15.0, (0.0, 1.0, 0.0, 1.0), 2.0)
+    
+    # Draw Point 2 marker (orange)
+    if _picking_state['point2_pos'] is not None:
+        ctx.draw_point_3d(_picking_state['point2_pos'], (1.0, 0.5, 0.0, 1.0), 20.0)
+        screen = ctx.world_to_screen(_picking_state['point2_pos'])
+        if screen:
+            ctx.draw_text_2d((screen[0] + 15, screen[1] - 8), f"P2 Max: {_picking_state['max_depth']:.1f}", (1.0, 0.5, 0.0, 1.0))
+            ctx.draw_circle_2d(screen, 15.0, (1.0, 0.5, 0.0, 1.0), 2.0)
+
+
+def _ensure_draw_handler():
+    """Ensure the draw handler is registered."""
+    global _draw_handler_registered
+    if not _draw_handler_registered:
+        try:
+            lf.remove_draw_handler("depthmap_picking")
+        except:
+            pass
+        lf.add_draw_handler("depthmap_picking", _depthmap_draw_handler, "POST_VIEW")
+        _draw_handler_registered = True
 
 
 class DepthmapPanel(Panel):
@@ -55,6 +122,11 @@ class DepthmapPanel(Panel):
         self._captured_pos = None
         self._captured_depth = None
         self._draw_handler_id = "depthmap_markers"
+        self._pick_handler_id = "depthmap_picker"
+        
+        # Picking state
+        self._picking_point = 0  # 0 = not picking, 1 or 2 = picking that point
+        self._last_selection_count = 0  # Track selection changes
         
         # Saved colors
         self._saved_colors: dict = {}  # SH0
@@ -64,44 +136,170 @@ class DepthmapPanel(Panel):
         # Status
         self._status_msg = ""
         self._status_is_error = False
-        
-        # Register marker draw handler
-        self._register_marker_handler()
     
-    def _register_marker_handler(self):
-        """Register viewport draw handler for point markers."""
-        panel = self  # Capture reference
+    def _check_and_capture_pick(self):
+        """Check if user has made a NEW selection and capture it."""
+        if self._picking_point == 0:
+            return
         
-        def draw_markers(ctx):
-            # Draw Point 1 marker (green sphere)
-            if panel._point1_pos is not None:
-                ctx.draw_point_3d(panel._point1_pos, (0.0, 1.0, 0.0, 1.0), 20.0)
-                screen = ctx.world_to_screen(panel._point1_pos)
-                if screen:
-                    ctx.draw_text_2d((screen[0] + 15, screen[1] - 8), f"P1 Min: {panel._min_depth:.1f}", (0.0, 1.0, 0.0, 1.0))
-                    ctx.draw_circle_2d(screen, 15.0, (0.0, 1.0, 0.0, 1.0), 2.0)
-            
-            # Draw Point 2 marker (orange sphere)
-            if panel._point2_pos is not None:
-                ctx.draw_point_3d(panel._point2_pos, (1.0, 0.5, 0.0, 1.0), 20.0)
-                screen = ctx.world_to_screen(panel._point2_pos)
-                if screen:
-                    ctx.draw_text_2d((screen[0] + 15, screen[1] - 8), f"P2 Max: {panel._max_depth:.1f}", (1.0, 0.5, 0.0, 1.0))
-                    ctx.draw_circle_2d(screen, 15.0, (1.0, 0.5, 0.0, 1.0), 2.0)
-            
-            # Draw captured position marker (cyan)
-            if panel._captured_pos is not None:
-                ctx.draw_point_3d(panel._captured_pos, (0.0, 1.0, 1.0, 1.0), 18.0)
-                screen = ctx.world_to_screen(panel._captured_pos)
-                if screen:
-                    ctx.draw_text_2d((screen[0] + 15, screen[1]), f"Captured: {panel._captured_depth:.2f}", (0.0, 1.0, 1.0, 1.0))
-                    ctx.draw_circle_2d(screen, 12.0, (0.0, 1.0, 1.0, 1.0), 2.0)
+        # Get current selection count
+        scene = lf.get_scene()
+        if not scene:
+            return
         
+        has_sel = scene.has_selection()
+        hovered = sel.get_hovered_gaussian_id()
+        
+        # Update status to show debug info
+        self._status_msg = f"has_sel={has_sel} hover={hovered}"
+        
+        # If there's a selection, try to capture it
+        if has_sel:
+            if self._capture_from_selection():
+                self._complete_pick(self._captured_pos)
+    
+    def _complete_pick(self, world_pos):
+        """Complete the pick operation with the given world position."""
+        self._captured_pos = world_pos
+        self._captured_depth = self._get_depth_from_position(world_pos)
+        
+        point_num = self._picking_point
+        if point_num == 1:
+            self._point1_pos = world_pos
+            self._min_depth = self._captured_depth
+            self._status_msg = f"Point 1 set: {self._min_depth:.2f}"
+        else:
+            self._point2_pos = world_pos
+            self._max_depth = self._captured_depth  
+            self._status_msg = f"Point 2 set: {self._max_depth:.2f}"
+        
+        self._use_custom_range = True
+        self._status_is_error = False
+        self._picking_point = 0
+        
+        # Clear selection and reset counter
+        scene = lf.get_scene()
+        if scene:
+            scene.clear_selection()
+        self._last_selection_count = 0
+        
+        # Apply depth map
+        node_name = self._get_selected_splat_name()
+        if node_name:
+            if not self._enabled:
+                self._save_original_colors(node_name, force=True)
+                self._enabled = True
+            self._apply_depthmap(silent=False)
+        
+        lf.ui.request_redraw()
+    
+    def _pick_point_at_screen(self, screen_x: float, screen_y: float) -> bool:
+        """Pick a point using the new pick_at_screen API."""
         try:
-            lf.remove_draw_handler(self._draw_handler_id)
-        except:
-            pass
-        lf.add_draw_handler(self._draw_handler_id, draw_markers, "POST_VIEW")
+            result = sel.pick_at_screen(screen_x, screen_y)
+            if result is None:
+                self._status_msg = "No hit at that location"
+                self._status_is_error = True
+                return False
+            
+            # Get world position from pick result
+            world_pos = result.world_position
+            self._captured_pos = world_pos
+            self._captured_depth = self._get_depth_from_position(world_pos)
+            
+            # Set the appropriate point
+            point_num = self._picking_point
+            if point_num == 1:
+                self._point1_pos = world_pos
+                self._min_depth = self._captured_depth
+                self._status_msg = f"Point 1 set: {self._min_depth:.2f}"
+            else:
+                self._point2_pos = world_pos
+                self._max_depth = self._captured_depth
+                self._status_msg = f"Point 2 set: {self._max_depth:.2f}"
+            
+            self._use_custom_range = True
+            self._status_is_error = False
+            
+            # Exit picking mode
+            self._picking_point = 0
+            
+            # Apply depth map if enabled
+            node_name = self._get_selected_splat_name()
+            if node_name:
+                if not self._enabled:
+                    self._save_original_colors(node_name, force=True)
+                    self._enabled = True
+                self._apply_depthmap(silent=False)
+            
+            lf.ui.request_redraw()
+            return True
+            
+        except Exception as e:
+            self._status_msg = f"Pick error: {e}"
+            self._status_is_error = True
+            self._picking_point = 0
+            return False
+    
+    def _start_picking(self, point_num: int):
+        """Start picking mode using modal operator."""
+        global _pending_pick
+        _pending_pick = None  # Clear any pending pick
+        
+        self._picking_point = point_num
+        self._status_msg = f"Click on model to set Point {point_num}..."
+        self._status_is_error = False
+        
+        # Set callback and invoke operator
+        set_pick_callback(_on_point_picked_callback, point_num)
+        op_id = "lfs_plugins.depthmap_viz.operators.point_picker.DEPTHMAP_OT_pick_point"
+        lf.ui.ops.invoke(op_id)
+        lf.ui.request_redraw()
+    
+    def _process_pending_pick(self):
+        """Process any pending pick from the modal operator."""
+        global _pending_pick
+        if _pending_pick is None:
+            return False
+        
+        world_pos, point_num = _pending_pick
+        _pending_pick = None
+        
+        self._captured_pos = world_pos
+        self._captured_depth = self._get_depth_from_position(world_pos)
+        
+        if point_num == 1:
+            self._point1_pos = world_pos
+            self._min_depth = self._captured_depth
+            self._status_msg = f"Point 1: {self._min_depth:.2f} (click again or ESC)"
+        else:
+            self._point2_pos = world_pos
+            self._max_depth = self._captured_depth
+            self._status_msg = f"Point 2: {self._max_depth:.2f} (click again or ESC)"
+        
+        self._use_custom_range = True
+        self._status_is_error = False
+        # DON'T clear _picking_point - stay in picking mode
+        # self._picking_point = 0
+        
+        # Apply depth map
+        node_name = self._get_selected_splat_name()
+        if node_name:
+            if not self._enabled:
+                self._save_original_colors(node_name, force=True)
+                self._enabled = True
+            self._apply_depthmap(silent=False)
+        
+        return True
+    
+    def _cancel_picking(self):
+        """Cancel picking mode."""
+        self._picking_point = 0
+        clear_pick_callback()
+        lf.ui.ops.cancel_modal()
+        self._status_msg = "Picking cancelled"
+        self._status_is_error = False
+        lf.ui.request_redraw()
     
     def _capture_from_selection(self) -> bool:
         """Capture position from selected gaussians."""
@@ -331,6 +529,27 @@ class DepthmapPanel(Panel):
         theme = lf.ui.theme()
         scale = layout.get_dpi_scale()
         
+        # Process any pending pick from the modal operator
+        self._process_pending_pick()
+        
+        # Check if picking was cancelled (ESC pressed)
+        if was_pick_cancelled() and self._picking_point > 0:
+            self._picking_point = 0
+            self._status_msg = "Picking stopped"
+            self._status_is_error = False
+        
+        # Ensure draw handler is registered for viewport markers
+        _ensure_draw_handler()
+        
+        # Update module-level state for draw handler
+        global _picking_state
+        _picking_state['picking_point'] = self._picking_point
+        _picking_state['status_msg'] = self._status_msg
+        _picking_state['point1_pos'] = self._point1_pos
+        _picking_state['point2_pos'] = self._point2_pos
+        _picking_state['min_depth'] = self._min_depth
+        _picking_state['max_depth'] = self._max_depth
+        
         node_name = self._get_selected_splat_name()
         if not node_name:
             layout.text_colored("Select a splat or point cloud", theme.palette.text_dim)
@@ -378,57 +597,37 @@ class DepthmapPanel(Panel):
         # === Depth Range ===
         if layout.collapsing_header("Depth Range", default_open=True):
             
-            # Instructions
-            layout.text_colored("1. Switch to Select mode (toolbar)", theme.palette.text_dim)
-            layout.text_colored("2. Click on model to select points", theme.palette.text_dim)
-            layout.text_colored("3. Click Set Point button below", theme.palette.text_dim)
-            layout.spacing()
-            
             # Point 1 section
             if self._point1_pos:
-                layout.text_colored(f"Point 1: {self._min_depth:.2f}", (0.0, 1.0, 0.0, 1.0))
+                layout.text_colored(f"Point 1 (Min): {self._min_depth:.2f}", (0.0, 1.0, 0.0, 1.0))
             else:
-                layout.label("Point 1: Not set")
+                layout.label("Point 1 (Min): Not set")
             
-            if layout.button("Set Point 1 from Selection##setp1", (-1, 32 * scale)):
-                if self._capture_from_selection():
-                    self._point1_pos = self._captured_pos
-                    self._min_depth = self._captured_depth
-                    self._use_custom_range = True
-                    self._status_msg = f"Point 1 set: {self._min_depth:.2f}"
-                    self._status_is_error = False
-                    settings_changed = True
-                    # Save colors if not enabled, then apply
-                    if not self._enabled:
-                        self._save_original_colors(node_name, force=True)
-                        self._enabled = True
-                    self._apply_depthmap(silent=False)
-                else:
-                    self._status_is_error = True
+            # Pick Point 1 button - highlighted when active
+            if self._picking_point == 1:
+                # Active picking - use error style (red) to indicate stop action
+                if layout.button_styled("[x] Stop Picking Point 1##pickp1", "error", (-1, 32 * scale)):
+                    self._cancel_picking()
+            else:
+                if layout.button("Pick Point 1##pickp1", (-1, 32 * scale)):
+                    self._start_picking(1)
             
             layout.spacing()
             
             # Point 2 section
             if self._point2_pos:
-                layout.text_colored(f"Point 2: {self._max_depth:.2f}", (1.0, 0.5, 0.0, 1.0))
+                layout.text_colored(f"Point 2 (Max): {self._max_depth:.2f}", (1.0, 0.5, 0.0, 1.0))
             else:
-                layout.label("Point 2: Not set")
+                layout.label("Point 2 (Max): Not set")
             
-            if layout.button("Set Point 2 from Selection##setp2", (-1, 32 * scale)):
-                if self._capture_from_selection():
-                    self._point2_pos = self._captured_pos
-                    self._max_depth = self._captured_depth
-                    self._use_custom_range = True
-                    self._status_msg = f"Point 2 set: {self._max_depth:.2f}"
-                    self._status_is_error = False
-                    settings_changed = True
-                    # Save colors if not enabled, then apply
-                    if not self._enabled:
-                        self._save_original_colors(node_name, force=True)
-                        self._enabled = True
-                    self._apply_depthmap(silent=False)
-                else:
-                    self._status_is_error = True
+            # Pick Point 2 button - highlighted when active
+            if self._picking_point == 2:
+                # Active picking - use error style (red) to indicate stop action
+                if layout.button_styled("[x] Stop Picking Point 2##pickp2", "error", (-1, 32 * scale)):
+                    self._cancel_picking()
+            else:
+                if layout.button("Pick Point 2##pickp2", (-1, 32 * scale)):
+                    self._start_picking(2)
             
             layout.spacing()
             
@@ -441,6 +640,7 @@ class DepthmapPanel(Panel):
                     self._status_msg = "Points cleared"
                     self._status_is_error = False
                     settings_changed = True
+                    self._picking_point = 0
                     lf.ui.request_redraw()
             
             layout.separator()

@@ -1,11 +1,83 @@
 # SPDX-FileCopyrightText: 2025 LichtFeld Studio Authors
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Point picker - finds the gaussian splat at a screen position."""
+"""Point picker operator - modal operator for picking points on the model."""
 
 import numpy as np
 from typing import Optional, Tuple
 
 import lichtfeld as lf
+import lichtfeld.selection as sel
+from lfs_plugins.types import Operator, Event
+
+
+# Module-level callback for when a point is picked
+_pick_callback = None
+_pick_point_num = 0
+_pick_cancelled = False  # Set when operator is cancelled
+
+
+def set_pick_callback(callback, point_num: int):
+    """Set the callback to invoke when a point is picked."""
+    global _pick_callback, _pick_point_num, _pick_cancelled
+    _pick_callback = callback
+    _pick_point_num = point_num
+    _pick_cancelled = False
+
+
+def clear_pick_callback():
+    """Clear the pick callback."""
+    global _pick_callback, _pick_point_num, _pick_cancelled
+    _pick_callback = None
+    _pick_point_num = 0
+    _pick_cancelled = True  # Mark as cancelled
+
+
+def was_pick_cancelled():
+    """Check if pick was cancelled and clear the flag."""
+    global _pick_cancelled
+    if _pick_cancelled:
+        _pick_cancelled = False
+        return True
+    return False
+
+
+class DEPTHMAP_OT_pick_point(Operator):
+    """Modal operator for picking a point on the gaussian splat model."""
+    
+    label = "Pick Depth Point"
+    description = "Click on the model to pick a point for depth range"
+    options = {'BLOCKING'}
+    
+    def invoke(self, context, event: Event) -> set:
+        """Start modal mode."""
+        return {'RUNNING_MODAL'}
+    
+    def modal(self, context, event: Event) -> set:
+        """Handle mouse events - continuous picking until ESC/right-click."""
+        global _pick_callback, _pick_point_num
+        
+        if event.type == 'LEFTMOUSE' and event.value == 'PRESS':
+            # Try to pick at mouse position
+            result = sel.pick_at_screen(event.mouse_region_x, event.mouse_region_y)
+            
+            if result is not None and _pick_callback is not None:
+                # Call callback but DON'T clear it - stay in picking mode
+                _pick_callback(result.world_position, _pick_point_num)
+                # Continue picking - don't return FINISHED
+                return {'RUNNING_MODAL'}
+            # If no hit, just continue
+            return {'RUNNING_MODAL'}
+        
+        elif event.type in {'RIGHTMOUSE', 'ESC'}:
+            clear_pick_callback()
+            return {'CANCELLED'}
+        
+        # Pass through other events
+        return {'RUNNING_MODAL'}
+    
+    def cancel(self, context):
+        """Clean up on cancel."""
+        clear_pick_callback()
 
 
 def pick_point_at_screen(screen_x: float, screen_y: float) -> Optional[Tuple[float, float, float]]:
