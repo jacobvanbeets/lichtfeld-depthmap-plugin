@@ -105,9 +105,13 @@ def compute_depth_values(
     actual_min = min_depth if min_depth is not None else float(np.min(masked_depths))
     actual_max = max_depth if max_depth is not None else float(np.max(masked_depths))
     
-    # Avoid division by zero (use abs to allow negative range for reverse order)
+    # Ensure min <= max (user may pick points in any order, including with negative values)
+    if actual_min > actual_max:
+        actual_min, actual_max = actual_max, actual_min
+    
+    # Avoid division by zero
     depth_range = actual_max - actual_min
-    if abs(depth_range) < 1e-6:
+    if depth_range < 1e-6:
         depth_range = 1.0
     
     # Normalize depths
@@ -192,8 +196,21 @@ def apply_depthmap_colors(
         return True, f"Applied {colormap} depth map (depth range: {d_min:.2f} - {d_max:.2f})"
     
     # Splat path
-    positions = splat.get_means().numpy()
+    # Use combined_model positions for depth calculation - this matches the coordinate
+    # space used by pick_at_screen (world space). Colors are still applied to splat.sh0_raw.
+    combined = scene.combined_model()
+    if combined is not None:
+        positions = combined.get_means().numpy()
+    else:
+        positions = splat.get_means().numpy()
     n_points = positions.shape[0]
+    
+    # Verify we have the same number of points as the splat's SH0 tensor
+    sh0_count = splat.sh0_raw.shape[0]
+    if n_points != sh0_count:
+        # Fall back to splat positions if counts don't match
+        positions = splat.get_means().numpy()
+        n_points = positions.shape[0]
     
     # Get camera position if needed
     camera_pos = None

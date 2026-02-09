@@ -18,9 +18,21 @@ git clone https://github.com/jacobvanbeets/lichtfeld-depthmap-plugin ~/.lichtfel
 ## Usage
 1. Open the "Depth Map" panel in the side panel.
 2. Pick colormap (Jet, Grayscale, Turbo, Viridis) and axis (Z/Y/X/Camera).
-3. Set custom depth range by clicking "Pick Point 1" or "Pick Point 2", then click directly on the model to set min/max depth values.
-   - You can click multiple times to adjust the point - each click updates the depth value.
-   - Click the red "Stop Picking" button or press ESC to exit picking mode.
+3. Set custom depth range using one of two methods:
+
+### Method 1: Click to Pick (Default)
+- Click "Pick Point 1" or "Pick Point 2", then click directly on the model to set min/max depth values.
+- You can click multiple times to adjust the point - each click updates the depth value.
+- Click the red "Stop Picking" button or press ESC to exit picking mode.
+
+### Method 2: Selection-Based (Old Method)
+Useful when XYZ picking coordinates are unreliable:
+1. Check "Use Selection Method (old)" in the Depth Range section.
+2. Use the Splat Select tool to select gaussians at your desired min depth location.
+3. Click "Set Point 1 from Selection".
+4. Select gaussians at your desired max depth location.
+5. Click "Set Point 2 from Selection".
+
 4. Fine-tune the depth values with the +/- buttons or input fields.
 5. Enable "Live Preview" to see changes in real-time.
 6. Use "Restore Original" to revert to original colors.

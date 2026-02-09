@@ -124,6 +124,9 @@ class DepthmapPanel(Panel):
         self._draw_handler_id = "depthmap_markers"
         self._pick_handler_id = "depthmap_picker"
         
+        # Picking method: False = click to pick (default), True = selection-based (old method)
+        self._use_selection_method = False
+        
         # Picking state
         self._picking_point = 0  # 0 = not picking, 1 or 2 = picking that point
         self._last_selection_count = 0  # Track selection changes
@@ -597,20 +600,51 @@ class DepthmapPanel(Panel):
         # === Depth Range ===
         if layout.collapsing_header("Depth Range", default_open=True):
             
+            # Picking method toggle
+            changed, self._use_selection_method = layout.checkbox(
+                "Use Selection Method (old)##selmethod", 
+                self._use_selection_method
+            )
+            if layout.is_item_hovered():
+                layout.set_tooltip(
+                    "Old method: Use the Splat Select tool to select gaussians,\n"
+                    "then click 'Set Point from Selection' buttons.\n"
+                    "Useful when XYZ picking coordinates are unreliable."
+                )
+            
+            layout.spacing()
+            
             # Point 1 section
             if self._point1_pos:
                 layout.text_colored(f"Point 1 (Min): {self._min_depth:.2f}", (0.0, 1.0, 0.0, 1.0))
             else:
                 layout.label("Point 1 (Min): Not set")
             
-            # Pick Point 1 button - highlighted when active
-            if self._picking_point == 1:
-                # Active picking - use error style (red) to indicate stop action
-                if layout.button_styled("[x] Stop Picking Point 1##pickp1", "error", (-1, 32 * scale)):
-                    self._cancel_picking()
+            if self._use_selection_method:
+                # Selection-based method (old way)
+                if layout.button("Set Point 1 from Selection##selp1", (-1, 32 * scale)):
+                    if self._capture_from_selection():
+                        self._point1_pos = self._captured_pos
+                        self._min_depth = self._captured_depth
+                        self._use_custom_range = True
+                        self._status_msg = f"Point 1 set from selection: {self._min_depth:.2f}"
+                        self._status_is_error = False
+                        # Apply depth map
+                        if node_name:
+                            if not self._enabled:
+                                self._save_original_colors(node_name, force=True)
+                                self._enabled = True
+                            self._apply_depthmap(silent=False)
+                        lf.ui.request_redraw()
             else:
-                if layout.button("Pick Point 1##pickp1", (-1, 32 * scale)):
-                    self._start_picking(1)
+                # Click-to-pick method (default)
+                if self._picking_point == 1:
+                    # Active picking - use error style (red) to indicate stop action
+                    if layout.button_styled("[x] Stop Picking Point 1##pickp1", "error", (-1, 32 * scale)):
+                        self._cancel_picking()
+                else:
+                    if layout.button("Pick Point 1##pickp1", (-1, 32 * scale)):
+                        self._start_picking(1)
             
             layout.spacing()
             
@@ -620,14 +654,31 @@ class DepthmapPanel(Panel):
             else:
                 layout.label("Point 2 (Max): Not set")
             
-            # Pick Point 2 button - highlighted when active
-            if self._picking_point == 2:
-                # Active picking - use error style (red) to indicate stop action
-                if layout.button_styled("[x] Stop Picking Point 2##pickp2", "error", (-1, 32 * scale)):
-                    self._cancel_picking()
+            if self._use_selection_method:
+                # Selection-based method (old way)
+                if layout.button("Set Point 2 from Selection##selp2", (-1, 32 * scale)):
+                    if self._capture_from_selection():
+                        self._point2_pos = self._captured_pos
+                        self._max_depth = self._captured_depth
+                        self._use_custom_range = True
+                        self._status_msg = f"Point 2 set from selection: {self._max_depth:.2f}"
+                        self._status_is_error = False
+                        # Apply depth map
+                        if node_name:
+                            if not self._enabled:
+                                self._save_original_colors(node_name, force=True)
+                                self._enabled = True
+                            self._apply_depthmap(silent=False)
+                        lf.ui.request_redraw()
             else:
-                if layout.button("Pick Point 2##pickp2", (-1, 32 * scale)):
-                    self._start_picking(2)
+                # Click-to-pick method (default)
+                if self._picking_point == 2:
+                    # Active picking - use error style (red) to indicate stop action
+                    if layout.button_styled("[x] Stop Picking Point 2##pickp2", "error", (-1, 32 * scale)):
+                        self._cancel_picking()
+                else:
+                    if layout.button("Pick Point 2##pickp2", (-1, 32 * scale)):
+                        self._start_picking(2)
             
             layout.spacing()
             
