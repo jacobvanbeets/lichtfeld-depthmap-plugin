@@ -2,6 +2,6 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Operators for depth map plugin."""
 
-from .point_picker import PointPickerOperator
+from .point_picker import DEPTHMAP_OT_pick_point as PointPickerOperator
 
 __all__ = ["PointPickerOperator"]
