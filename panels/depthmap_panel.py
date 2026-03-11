@@ -6,7 +6,6 @@ from typing import Optional
 import numpy as np
 import lichtfeld as lf
 import lichtfeld.selection as sel
-from lfs_plugins.types import Panel
 
 from ..core.depthmap import apply_depthmap_colors
 from ..operators.point_picker import set_pick_callback, clear_pick_callback, was_pick_cancelled
@@ -78,11 +77,12 @@ def _ensure_draw_handler():
         _draw_handler_registered = True
 
 
-class DepthmapPanel(Panel):
+class DepthmapPanel(lf.ui.Panel):
     """Panel for depth map visualization with live preview."""
     
+    id = "depthmap_viz.depthmap_panel"
     label = "Depth Map"
-    space = "MAIN_PANEL_TAB"
+    space = lf.ui.PanelSpace.MAIN_PANEL_TAB
     order = 25
     
     COLORMAP_ITEMS = [
